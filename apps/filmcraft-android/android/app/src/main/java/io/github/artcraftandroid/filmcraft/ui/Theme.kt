@@ -27,17 +27,17 @@ val Inter = FontFamily(
  */
 object Fc {
     // surfaces
-    val Black = Color(0xFF000000)
+    val Black = Color(0xFF0B0B0F)
     /** Full-screen pages over the editor (export). */
-    val Layer1 = Color(0xFF1B1B1B)
+    val Layer1 = Color(0xFF17171D)
     /** Bottom panels, dialogs, menus, the text strip. */
-    val Panel = Color(0xFF232323)
+    val Panel = Color(0xFF19191F)
     /** Rows and cards on panels. */
-    val Raised = Color(0xFF2C2C2C)
+    val Raised = Color(0xFF24242C)
     /** The band behind the navigation buttons under a panel. */
-    val PanelBand = Color(0xFF171717)
+    val PanelBand = Color(0xFF121217)
     /** Timeline lanes. */
-    val Lane = Color(0xFF111111)
+    val Lane = Color(0xFF101014)
     val Hover = Color(0x1CFFFFFF)
     val Hairline = Color(0x24FFFFFF)
     val Scrim = Color(0x99000000)
@@ -53,8 +53,8 @@ object Fc {
     val Icon = Color(0xFFDBDBDB)
 
     // accent
-    val Accent = Color(0xFF4069FD)
-    val AccentLight = Color(0xFF5681FF)
+    val Accent = Color(0xFFB7FF35)
+    val AccentLight = Color(0xFFD0FF78)
     val Negative = Color(0xFFFC432E)
     val Recording = Color(0xFFF83A2B)
 
