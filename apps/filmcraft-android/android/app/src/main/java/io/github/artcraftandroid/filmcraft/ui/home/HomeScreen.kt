@@ -1,4 +1,3 @@
-
 package io.github.artcraftandroid.filmcraft.ui.home
 
 import android.graphics.BitmapFactory
