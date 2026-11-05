@@ -1,10 +1,7 @@
-# Release pipeline: pushing a version tag (v0.0.1-beta, v0.2.0, v1.0.0-rc.1, …) builds the APK (for
-# 64-bit ARM phones) signed with the release key and makes it a draft GitHub release named after the
-# tag, with an empty "What's Changed" section. Fill that in on GitHub and publish the draft: it
-# becomes the latest release (betas too: while the app is in beta, every release is one).
-#
-# A manual run (Actions › Release › Run workflow) is a dry run: it builds the APK at the version in
-# gradle.properties and keeps it as the run's artifact, and releases nothing.
+
+# Release pipeline: pushing a version tag builds a signed APK and creates a draft GitHub release.
+# A manual run is a testing build: it uses Gradle's debug signing key if no release key is configured.
+
 name: Release
 
 on:
@@ -17,7 +14,6 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  # never cancel a release halfway; a newer push waits its turn
   cancel-in-progress: false
 
 env:
@@ -37,12 +33,11 @@ jobs:
           listed="$(sed -n 's/^filmcraft\.version=//p' apps/filmcraft-android/android/gradle.properties)"
           if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="$listed"; fi
           if ! printf '%s' "$v" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
-            echo "::error::'$v' is not a version like 1.2.3 or 1.2.3-beta"
+            echo "::error::'$v' is not a valid version"
             exit 1
           fi
-          # the tag must be the version gradle.properties names (F-Droid builds from that file)
           if [ "$v" != "$listed" ]; then
-            echo "::error::the tag is v$v but gradle.properties says filmcraft.version=$listed: set it (and filmcraft.versionCode) before tagging"
+            echo "::error::The tag is v$v but gradle.properties says $listed"
             exit 1
           fi
           echo "version=$v" >>"$GITHUB_OUTPUT"
@@ -53,7 +48,6 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # the Rust release and targets rust-toolchain.toml names
       - name: Install Rust
         run: rustup toolchain install
 
@@ -74,27 +68,21 @@ jobs:
             printf '%s' "$KEYSTORE_BASE64" | base64 -d >"$RUNNER_TEMP/release.p12"
             echo "FILMCRAFT_KEYSTORE=$RUNNER_TEMP/release.p12" >>"$GITHUB_ENV"
           elif [ "$GITHUB_REF_TYPE" = tag ]; then
-            echo "::error::No release key: a release is never unsigned"
+            echo "::error::No release key configured"
             exit 1
           else
-            echo "::warning::No release key: this dry run's APK stays unsigned"
+            echo "::notice::No release key: using Gradle debug signing for this test build"
           fi
 
-      # unsigned, exactly as F-Droid builds it; the next step signs it
       - name: Build
         working-directory: apps/filmcraft-android/android
         env:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
-          ./gradlew assembleRelease "-Pfilmcraft.abis=arm64-v8a" "-Pfilmcraft.version=$VERSION" -Pfilmcraft.unsigned=true --no-daemon
+          ./gradlew assembleRelease "-Pfilmcraft.abis=arm64-v8a" "-Pfilmcraft.version=$VERSION" --no-daemon
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp app/build/outputs/apk/release/app-release-unsigned.apk "$GITHUB_WORKSPACE/dist/filmcraft-android-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/dist/filmcraft-android-$VERSION.apk"
 
-      # v0.0.1-beta was signed with an older key (CN=LightCraft for Android). Every APK since carries
-      # the lineage that hands it over to the shared artcraft-android key (APK Signature Scheme v3),
-      # so installed copies update. v3 alone: the app needs Android 10 and v3 works from Android 9,
-      # while v2 would need the old key and F-Droid refuses an APK whose v2 and v3 keys differ. The
-      # ZIP layout stays Gradle's, so F-Droid can copy this signature onto its own build.
       - name: Sign
         if: env.FILMCRAFT_KEYSTORE != ''
         env:
@@ -111,25 +99,24 @@ jobs:
               --v4-signing-enabled false --alignment-preserved true "$apk"
           done
 
-      - name: APK
+      - name: Verify APK
         run: |
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
-          echo >>"$GITHUB_STEP_SUMMARY"
           for apk in dist/*.apk; do
-            if [ -z "$FILMCRAFT_KEYSTORE" ]; then
-              echo "::warning::No release key: $apk is unsigned"
-              continue
+            "$apksigner" verify --verbose "$apk"
+            if [ -n "$FILMCRAFT_KEYSTORE" ]; then
+              certs="$("$apksigner" verify --print-certs "$apk")"
+              if ! "$apksigner" lineage --in "$apk" --print-certs | grep -q "CN=LightCraft for Android"; then
+                echo "::error::$apk has no required signing lineage"
+                exit 1
+              fi
+              {
+                echo "    $(basename "$apk")"
+                grep "certificate SHA-256" <<<"$certs" | sed 's/^/      /'
+              } >>"$GITHUB_STEP_SUMMARY"
+            else
+              echo "::notice::Test APK signed with temporary debug key"
             fi
-            certs="$("$apksigner" verify --print-certs "$apk")"
-            # the lineage must name v0.0.1-beta's key, or installed copies can't update
-            if ! "$apksigner" lineage --in "$apk" --print-certs | grep -q "CN=LightCraft for Android"; then
-              echo "::error::$apk has no lineage from the old key"
-              exit 1
-            fi
-            {
-              echo "    $(basename "$apk")"
-              grep "certificate SHA-256" <<<"$certs" | sed 's/^/      /'
-            } >>"$GITHUB_STEP_SUMMARY"
           done
 
       - uses: actions/upload-artifact@v7
@@ -161,4 +148,4 @@ jobs:
       - name: Draft the release
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes "## What's Changed" -- dist/*
-          echo "Draft **$GITHUB_REF_NAME** is ready: fill in What's Changed and publish it." >>"$GITHUB_STEP_SUMMARY"
+          echo "Draft $GITHUB_REF_NAME is ready." >>"$GITHUB_STEP_SUMMARY"
