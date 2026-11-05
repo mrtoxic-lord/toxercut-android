@@ -1,3 +1,4 @@
+
 package io.github.artcraftandroid.filmcraft.ui
 
 import androidx.compose.foundation.Canvas
@@ -60,6 +61,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -558,9 +560,12 @@ fun PrimaryButton(
             .fillMaxWidth()
             .height(56.dp)
             .clip(CircleShape)
-            .background(
-                if (enabled) CosmicGradient
-                else CosmicPurple.copy(alpha = 0.35f),
+            .then(
+                if (enabled) {
+                    Modifier.background(CosmicGradient)
+                } else {
+                    Modifier.background(CosmicPurple.copy(alpha = 0.35f))
+                },
             )
             .then(
                 if (enabled) Modifier.border(
@@ -597,10 +602,11 @@ fun DialogButton(
             .clip(CircleShape)
             .then(
                 if (filled) {
-                    Modifier.background(
-                        if (destructive) Fc.Negative
-                        else CosmicGradient,
-                    )
+                    if (destructive) {
+                        Modifier.background(Fc.Negative)
+                    } else {
+                        Modifier.background(CosmicGradient)
+                    }
                 } else {
                     Modifier
                         .background(CosmicSurface)
